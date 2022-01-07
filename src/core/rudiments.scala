@@ -40,7 +40,7 @@ export scala.jdk.CollectionConverters.*
 export scala.annotation.{tailrec, implicitNotFound, targetName, switch, StaticAnnotation}
 
 type Bytes = IArray[Byte]
-type DataStream = LazyList[IArray[Byte] throws StreamCutError]
+type DataStream = LazyList[IArray[Byte]]
 
 opaque type Text = String
 
@@ -68,7 +68,7 @@ case class ExcessDataError(size: ByteSize, limit: ByteSize) extends Error:
     Text(s"the amount of data in the stream (at least ${size}B) exceeds the limit (${limit}B)")
 
 extension (value: DataStream)
-  def slurp(limit: ByteSize): Bytes throws ExcessDataError | StreamCutError =
+  def slurp(limit: ByteSize): Bytes =
     value.foldLeft(IArray[Byte]()):
       (acc, next) =>
         if acc.length + next.length > limit
@@ -106,15 +106,15 @@ def fix[T](func: Recur[T] ?=> (T => T)): (T => T) = func(using Recur(fix(func)))
 def recur[T: Recur](value: T): T = summon[Recur[T]](value)
 
 case class Property(name: Text) extends Dynamic:
-  def apply(): Text throws KeyNotFoundError =
+  def apply(): Text =
     Text(Option(System.getProperty(name.s)).getOrElse(throw KeyNotFoundError(name)).nn)
   
   def selectDynamic(key: String): Property = Property(Text(s"$name.$key"))
-  def applyDynamic(key: String)(): Text throws KeyNotFoundError = selectDynamic(key).apply()
+  def applyDynamic(key: String)(): Text = selectDynamic(key).apply()
 
 object Sys extends Dynamic:
   def selectDynamic(key: String): Property = Property(Text(key))
-  def applyDynamic(key: String)(): Text throws KeyNotFoundError = selectDynamic(key).apply()
+  def applyDynamic(key: String)(): Text = selectDynamic(key).apply()
   def bigEndian: Boolean = java.nio.ByteOrder.nativeOrder == java.nio.ByteOrder.BIG_ENDIAN
 
 case class KeyNotFoundError(name: Text) extends Error:
@@ -173,18 +173,18 @@ object Util:
     case in: ji.InputStream =>
       readInputStream(ji.BufferedInputStream(in), limit)
   
-  def write(stream: DataStream, out: ji.OutputStream): Unit throws StreamCutError =
+  def write(stream: DataStream, out: ji.OutputStream): Unit =
     stream.map(_.unsafeMutable).foreach(out.write(_))
 
 object Source:
   given Source[Stdin.type] with
     type E = StreamCutError
-    def read(value: Stdin.type): DataStream throws StreamCutError =
+    def read(value: Stdin.type): DataStream =
       if System.in == null then throw StreamCutError() else Util.readInputStream(System.in, 10.mb)
 
 trait Source[T]:
   type E <: Exception
-  def read(value: T): DataStream throws E
+  def read(value: T): DataStream
 
 object Sink:
   given Sink[Stdout.type] with
@@ -208,7 +208,7 @@ object Sink:
 
 trait Sink[T]:
   type E <: Exception
-  def write(value: T, stream: DataStream): Unit throws E | StreamCutError
+  def write(value: T, stream: DataStream): Unit
 
 object SafeStreamable:
   given SafeStreamable[LazyList[Bytes]] = identity(_)
@@ -229,11 +229,11 @@ trait SafeStreamable[T] extends Streamable[T]:
 object Readable:
   given Readable[DataStream] with
     type E = Nothing
-    def read(stream: DataStream): DataStream throws E | StreamCutError = stream
+    def read(stream: DataStream): DataStream = stream
   
   given Readable[Bytes] with
     type E = ExcessDataError
-    def read(stream: DataStream): Bytes throws ExcessDataError | StreamCutError =
+    def read(stream: DataStream): Bytes =
       stream.slurp(10.mb)
 
   given (using enc: Encoding): Readable[Text] with
@@ -263,11 +263,11 @@ trait Encoding:
 trait Readable[T]:
   readable =>
     type E <: Exception
-    def read(stream: DataStream): T throws E | StreamCutError
+    def read(stream: DataStream): T
     def map[S](fn: T => S): rudiments.Readable[S] { type E = readable.E } =
       new rudiments.Readable[S]:
         type E = readable.E
-        def read(stream: DataStream): S throws E | StreamCutError =
+        def read(stream: DataStream): S =
           fn(readable.read(stream))
 
 object Stdin
@@ -275,17 +275,17 @@ object Stdout
 object Stderr
 
 extension [T](value: T)
-  def dataStream(using src: Source[T]): DataStream throws src.E = src.read(value)
+  def dataStream(using src: Source[T]): DataStream = src.read(value)
   
-  def writeStream(stream: DataStream)(using sink: Sink[T]): Unit throws sink.E | StreamCutError =
+  def writeStream(stream: DataStream)(using sink: Sink[T]): Unit =
     sink.write(value, stream)
   
   def writeTo[S](destination: S)(using sink: Sink[S], streamable: Streamable[T])
-                : Unit throws sink.E | StreamCutError =
+                : Unit =
     sink.write(destination, streamable.stream(value))
 
   def read[S](using readable: Readable[S], src: Source[T])
-      : S throws readable.E | src.E | StreamCutError =
+      : S =
     readable.read(dataStream)
 
 case class githubIssue(id: Int) extends StaticAnnotation
